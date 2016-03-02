@@ -46,7 +46,8 @@ func init() {
 func nativeLoop() {
 	_nativeLoop.Call(
 		syscall.NewCallbackCDecl(systray_ready),
-		syscall.NewCallbackCDecl(systray_menu_item_selected))
+		syscall.NewCallbackCDecl(systray_menu_item_selected),
+		syscall.NewCallbackCDecl(systray_leftmouse_clicked))
 }
 
 func quit() {
@@ -150,5 +151,10 @@ func systray_ready(ignore uintptr) uintptr {
 
 func systray_menu_item_selected(id uintptr) uintptr {
 	systrayMenuItemSelected(int32(id))
+	return 0
+}
+
+func systray_leftmouse_clicked() uintptr {
+	systrayLeftMouseClicked()
 	return 0
 }

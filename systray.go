@@ -42,6 +42,8 @@ var (
 	currentID int32
 )
 
+var LeftMouseClicked = make(chan interface{})
+
 // Run initializes GUI and starts the event loop, then invokes the onReady
 // callback.
 // It blocks until systray.Quit() is called.
@@ -140,4 +142,8 @@ func systrayMenuItemSelected(id int32) {
 	// in case no one waiting for the channel
 	default:
 	}
+}
+
+func systrayLeftMouseClicked() {
+	LeftMouseClicked <- nil
 }
