@@ -13,6 +13,7 @@ static HWND hWnd;
 static HMENU hTrayMenu;
 
 void (*systray_menu_item_selected)(int menu_id);
+void (*systray_leftmouse_clicked)();
 
 void reportWindowsError(const char* action) {
 	LPTSTR pErrMsg = NULL;
@@ -26,7 +27,7 @@ void reportWindowsError(const char* action) {
 			pErrMsg,
 			0,
 			NULL);
-	printf("Systray error %s: %d %s\n", action, errCode, pErrMsg);
+	printf("Systray error %s: %d %ls\n", action, errCode, pErrMsg);
 }
 
 void ShowMenu(HWND hWnd) {
@@ -70,7 +71,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 					ShowMenu(hWnd);
 					break;
 				case WM_LBUTTONUP:
-					ShowMenu(hWnd);
+					systray_leftmouse_clicked();
 					break;
 				default:
 					return DefWindowProc(hWnd, message, wParam, lParam);
@@ -133,8 +134,9 @@ BOOL addNotifyIcon() {
 	return Shell_NotifyIcon(NIM_ADD, &nid);
 }
 
-int nativeLoop(void (*systray_ready)(int ignored), void (*_systray_menu_item_selected)(int menu_id)) {
+int nativeLoop(void (*systray_ready)(int ignored), void (*_systray_menu_item_selected)(int menu_id), void(*_systray_leftmouse_clicked)()) {
 	systray_menu_item_selected = _systray_menu_item_selected;
+	systray_leftmouse_clicked = _systray_leftmouse_clicked;
 
 	HINSTANCE hInstance = GetModuleHandle(NULL);
 	TCHAR* szWindowClass = TEXT("SystrayClass");
