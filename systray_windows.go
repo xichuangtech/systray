@@ -1,47 +1,30 @@
 package systray
 
 import (
-	"fmt"
+	"strconv"
+	//	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
+	//	"path/filepath"
 	"syscall"
 	"unsafe"
 
-	"github.com/getlantern/filepersist"
+	//	"github.com/getlantern/filepersist"
 )
 
 var (
 	iconFiles = make([]*os.File, 0)
-	dllDir    = filepath.Join(os.Getenv("APPDATA"), "systray")
-	dllFile   = filepath.Join(dllDir, "systray.dll")
+	dllFile   = "systray.dll"
 
-	mod                      = syscall.NewLazyDLL(dllFile)
-	_nativeLoop              = mod.NewProc("nativeLoop")
-	_quit                    = mod.NewProc("quit")
-	_setIcon                 = mod.NewProc("setIcon")
-	_setTitle                = mod.NewProc("setTitle")
-	_setTooltip              = mod.NewProc("setTooltip")
-	_add_or_update_menu_item = mod.NewProc("add_or_update_menu_item")
+	mod                                = syscall.NewLazyDLL(dllFile)
+	_nativeLoop                        = mod.NewProc("nativeLoop")
+	_quit                              = mod.NewProc("quit")
+	_setIcon                           = mod.NewProc("setIcon")
+	_setTitle                          = mod.NewProc("setTitle")
+	_setTooltip                        = mod.NewProc("setTooltip")
+	_add_or_update_menu_item           = mod.NewProc("add_or_update_menu_item")
+	_add_or_update_menu_item_with_icon = mod.NewProc("add_or_update_menu_item_with_icon")
 )
-
-func init() {
-	// Write DLL to file
-	b, err := Asset("systray.dll")
-	if err != nil {
-		panic(fmt.Errorf("Unable to read systray.dll: %v", err))
-	}
-
-	err = os.MkdirAll(dllDir, 0755)
-	if err != nil {
-		panic(fmt.Errorf("Unable to create directory %v to hold systray.dll: %v", dllDir, err))
-	}
-
-	err = filepersist.Save(dllFile, b, 0644)
-	if err != nil {
-		panic(fmt.Errorf("Unable to save systray.dll to %v: %v", dllFile, err))
-	}
-}
 
 func nativeLoop() {
 	_nativeLoop.Call(
@@ -78,6 +61,15 @@ func SetIcon(iconBytes []byte) {
 	// Need to close file before we load it to make sure contents is flushed.
 	f.Close()
 	name, err := strUTF16(f.Name())
+	if err != nil {
+		log.Errorf("Unable to convert name to string pointer: %v", err)
+		return
+	}
+	_setIcon.Call(name.Raw())
+}
+
+func SetFileIcon(filePath string) {
+	name, err := strUTF16(filePath)
 	if err != nil {
 		log.Errorf("Unable to convert name to string pointer: %v", err)
 		return
@@ -124,6 +116,61 @@ func addOrUpdateMenuItem(item *MenuItem) {
 		uintptr(item.id),
 		title.Raw(),
 		tooltip.Raw(),
+		uintptr(disabled),
+		uintptr(checked),
+	)
+}
+
+func addOrUpdateMenuItemWithIcon(item *MenuItem, data []byte) {
+
+	f, err := ioutil.TempFile("", "systray_temp_item_icon"+strconv.Itoa(int(item.id)))
+	if err != nil {
+		log.Errorf("Unable to create temp icon: %v", err)
+		return
+	}
+	defer f.Close()
+	_, err = f.Write(data)
+	if err != nil {
+		log.Errorf("Unable to write icon to temp file %v: %v", f.Name(), f)
+		return
+	}
+	// Need to close file before we load it to make sure contents is flushed.
+	f.Close()
+
+	addOrUpdateMenuItemWithFileIcon(item, f.Name())
+}
+
+func addOrUpdateMenuItemWithFileIcon(item *MenuItem, filePath string) {
+	var disabled = 0
+	if item.disabled {
+		disabled = 1
+	}
+	var checked = 0
+	if item.checked {
+		checked = 1
+	}
+	title, err := strUTF16(item.title)
+	if err != nil {
+		log.Errorf("Unable to convert title to string pointer: %v", err)
+		return
+	}
+	tooltip, err := strUTF16(item.tooltip)
+	if err != nil {
+		log.Errorf("Unable to convert tooltip to string pointer: %v", err)
+		return
+	}
+	name, err := strUTF16(filePath)
+	if err != nil {
+		log.Errorf("Unable to convert filePath to string pointer: %v", err)
+		return
+	}
+
+	log.Debug("_add_or_update_menu_item_with_icon call")
+	_add_or_update_menu_item_with_icon.Call(
+		uintptr(item.id),
+		title.Raw(),
+		tooltip.Raw(),
+		name.Raw(),
 		uintptr(disabled),
 		uintptr(checked),
 	)

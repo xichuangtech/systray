@@ -4,6 +4,7 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
 #include "stdafx.h"
 #include "systray.h"
+#include <new>
 
 // Message posted into message loop when Notification Icon is clicked
 #define WM_SYSTRAY_MESSAGE (WM_USER + 1)
@@ -115,6 +116,152 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow, TCHAR* szWindowClass) {
 	return hWnd;
 }
 
+HBITMAP IconToBitmap(HICON hIcon, SIZE* pTargetSize = NULL)
+{
+	ICONINFO info = { 0 };
+	if (hIcon == NULL
+		|| !GetIconInfo(hIcon, &info)
+		|| !info.fIcon)
+	{
+		return NULL;
+	}
+
+	INT nWidth = 0;
+	INT nHeight = 0;
+	if (pTargetSize != NULL)
+	{
+		nWidth = pTargetSize->cx;
+		nHeight = pTargetSize->cy;
+	}
+	else
+	{
+		if (info.hbmColor != NULL)
+		{
+			BITMAP bmp = { 0 };
+			GetObject(info.hbmColor, sizeof(bmp), &bmp);
+
+			nWidth = bmp.bmWidth;
+			nHeight = bmp.bmHeight;
+		}
+	}
+
+	if (info.hbmColor != NULL)
+	{
+		DeleteObject(info.hbmColor);
+		info.hbmColor = NULL;
+	}
+
+	if (info.hbmMask != NULL)
+	{
+		DeleteObject(info.hbmMask);
+		info.hbmMask = NULL;
+	}
+
+	if (nWidth <= 0
+		|| nHeight <= 0)
+	{
+		return NULL;
+	}
+
+	INT nPixelCount = nWidth * nHeight;
+
+	HDC dc = GetDC(NULL);
+	INT* pData = NULL;
+	HDC dcMem = NULL;
+	HBITMAP hBmpOld = NULL;
+	bool* pOpaque = NULL;
+	HBITMAP dib = NULL;
+	BOOL bSuccess = FALSE;
+
+	do
+	{
+		BITMAPINFOHEADER bi = { 0 };
+		bi.biSize = sizeof(BITMAPINFOHEADER);
+		bi.biWidth = nWidth;
+		bi.biHeight = -nHeight;
+		bi.biPlanes = 1;
+		bi.biBitCount = 32;
+		bi.biCompression = BI_RGB;
+		dib = CreateDIBSection(dc, (BITMAPINFO*)&bi, DIB_RGB_COLORS, (VOID**)&pData, NULL, 0);
+		if (dib == NULL) break;
+
+		memset(pData, 0, nPixelCount * 4);
+
+		dcMem = CreateCompatibleDC(dc);
+		if (dcMem == NULL) break;
+
+		hBmpOld = (HBITMAP)SelectObject(dcMem, dib);
+		::DrawIconEx(dcMem, 0, 0, hIcon, nWidth, nHeight, 0, NULL, DI_MASK);
+
+		pOpaque = new(std::nothrow) bool[nPixelCount];
+		if (pOpaque == NULL) break;
+		for (INT i = 0; i < nPixelCount; ++i)
+		{
+			pOpaque[i] = !pData[i];
+		}
+
+		memset(pData, 0, nPixelCount * 4);
+		::DrawIconEx(dcMem, 0, 0, hIcon, nWidth, nHeight, 0, NULL, DI_NORMAL);
+
+		BOOL bPixelHasAlpha = FALSE;
+		UINT* pPixel = (UINT*)pData;
+		for (INT i = 0; i<nPixelCount; ++i, ++pPixel)
+		{
+			if ((*pPixel & 0xff000000) != 0)
+			{
+				bPixelHasAlpha = TRUE;
+				break;
+			}
+		}
+
+		if (!bPixelHasAlpha)
+		{
+			pPixel = (UINT*)pData;
+			for (INT i = 0; i <nPixelCount; ++i, ++pPixel)
+			{
+				if (pOpaque[i])
+				{
+					*pPixel |= 0xFF000000;
+				}
+				else
+				{
+					*pPixel &= 0x00FFFFFF;
+				}
+			}
+		}
+
+		bSuccess = TRUE;
+
+	} while (FALSE);
+
+
+	if (pOpaque != NULL)
+	{
+		delete[]pOpaque;
+		pOpaque = NULL;
+	}
+
+	if (dcMem != NULL)
+	{
+		SelectObject(dcMem, hBmpOld);
+		DeleteDC(dcMem);
+	}
+
+	ReleaseDC(NULL, dc);
+
+	if (!bSuccess)
+	{
+		if (dib != NULL)
+		{
+			DeleteObject(dib);
+			dib = NULL;
+		}
+	}
+
+	return dib;
+}
+
+
 
 BOOL createMenu() {
 	hTrayMenu = CreatePopupMenu();
@@ -208,6 +355,53 @@ void add_or_update_menu_item(int menuId, wchar_t* title, wchar_t* tooltip, short
 		InsertMenuItem(hTrayMenu, -1, TRUE, &menuItemInfo);
 	}
 }
+
+void add_or_update_menu_item_with_icon(int menuId, wchar_t* title, wchar_t* tooltip, wchar_t* iconFile, short disabled, short checked) {
+	SIZE size = { 16,16 };
+	HICON hIcon = (HICON)LoadImage(NULL, iconFile, IMAGE_ICON, 64, 64, LR_LOADFROMFILE);
+
+	
+	MENUITEMINFO menuItemInfo;
+	menuItemInfo.cbSize = sizeof(MENUITEMINFO);
+	menuItemInfo.fMask = MIIM_STRING | MIIM_DATA | MIIM_STATE|MIIM_BITMAP;
+	menuItemInfo.fType = MFT_STRING|MFT_BITMAP;
+	menuItemInfo.dwTypeData = title;
+	menuItemInfo.cch = wcslen(title) + 1;
+	menuItemInfo.dwItemData = (ULONG_PTR)menuId;
+	menuItemInfo.fState = 0;
+	if (disabled == 1) {
+		menuItemInfo.fState |= MFS_DISABLED;
+	}
+	if (checked == 1) {
+		menuItemInfo.fState |= MFS_CHECKED;
+	}
+	
+	HBITMAP hbitmap = IconToBitmap(hIcon, &size);
+	menuItemInfo.hbmpItem = hbitmap;
+
+	int itemCount = GetMenuItemCount(hTrayMenu);
+	int i;
+	for (i = 0; i < itemCount; i++) {
+		int id = GetMenuItemId(i);
+		if (-1 == id) {
+			continue;
+		}
+		if (menuId == id) {
+			BOOL b = SetMenuItemInfo(hTrayMenu, i, TRUE, &menuItemInfo);
+			if (!b) {
+				reportWindowsError("InsertMenuItem");
+			}
+			break;
+		}
+	}
+	if (i == itemCount) {
+	  BOOL b=	InsertMenuItem(hTrayMenu, -1, TRUE, &menuItemInfo);
+	  if (!b) {
+		  reportWindowsError("InsertMenuItem");
+	  }
+	}
+}
+
 
 void quit() {
 	Shell_NotifyIcon(NIM_DELETE, &nid);

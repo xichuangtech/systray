@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/getlantern/systray"
-	"github.com/getlantern/systray/example/icon"
+
 	"github.com/skratchdot/open-golang/open"
+	"github.com/xichuangtech/systray"
+	"github.com/xichuangtech/systray/example/icon"
 )
 
 func main() {

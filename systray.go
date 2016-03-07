@@ -75,6 +75,22 @@ func AddMenuItem(title string, tooltip string) *MenuItem {
 	return item
 }
 
+func AddMenuItemWithIcon(title string, tooltip string, data []byte) *MenuItem {
+	id := atomic.AddInt32(&currentID, 1)
+	item := &MenuItem{nil, id, title, tooltip, false, false}
+	item.ClickedCh = make(chan interface{})
+	item.updateWithIcon(data)
+	return item
+}
+
+func AddMenuItemWithFileIcon(title string, tooltip string, filePath string) *MenuItem {
+	id := atomic.AddInt32(&currentID, 1)
+	item := &MenuItem{nil, id, title, tooltip, false, false}
+	item.ClickedCh = make(chan interface{})
+	item.updateWithFileIcon(filePath)
+	return item
+}
+
 // SetTitle set the text to display on a menu item
 func (item *MenuItem) SetTitle(title string) {
 	item.title = title
@@ -127,6 +143,22 @@ func (item *MenuItem) update() {
 	defer menuItemsLock.Unlock()
 	menuItems[item.id] = item
 	addOrUpdateMenuItem(item)
+}
+
+// update propogates changes on a menu item to systray
+func (item *MenuItem) updateWithIcon(data []byte) {
+	menuItemsLock.Lock()
+	defer menuItemsLock.Unlock()
+	menuItems[item.id] = item
+	addOrUpdateMenuItemWithIcon(item, data)
+}
+
+// update propogates changes on a menu item to systray
+func (item *MenuItem) updateWithFileIcon(filePath string) {
+	menuItemsLock.Lock()
+	defer menuItemsLock.Unlock()
+	menuItems[item.id] = item
+	addOrUpdateMenuItemWithFileIcon(item, filePath)
 }
 
 func systrayReady() {
